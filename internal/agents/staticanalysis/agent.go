@@ -1,4 +1,4 @@
-package codereview
+package staticanalysis
 
 import (
 	"bufio"

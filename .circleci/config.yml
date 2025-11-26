@@ -1,0 +1,257 @@
+version: 2.1
+
+# Orbs - reusable packages of CircleCI configuration
+orbs:
+  go: circleci/go@1.9.0
+  docker: circleci/docker@2.4.0
+
+# Executors - execution environments
+executors:
+  go-executor:
+    docker:
+      - image: cimg/go:1.21
+    working_directory: ~/project
+    environment:
+      GO111MODULE: "on"
+
+# Commands - reusable command sequences
+commands:
+  restore-go-cache:
+    steps:
+      - restore_cache:
+          keys:
+            - go-mod-v1-{{ checksum "go.sum" }}
+            - go-mod-v1-
+  
+  save-go-cache:
+    steps:
+      - save_cache:
+          key: go-mod-v1-{{ checksum "go.sum" }}
+          paths:
+            - ~/go/pkg/mod
+
+# Jobs
+jobs:
+  build:
+    executor: go-executor
+    steps:
+      - checkout
+      - restore-go-cache
+      - run:
+          name: Download dependencies
+          command: go mod download
+      - run:
+          name: Verify dependencies
+          command: go mod verify
+      - run:
+          name: Build binary
+          command: |
+            go build -v -o gosecvibes cmd/gosecvibes/main.go
+            chmod +x gosecvibes
+      - save-go-cache
+      - persist_to_workspace:
+          root: .
+          paths:
+            - gosecvibes
+
+  test:
+    executor: go-executor
+    steps:
+      - checkout
+      - restore-go-cache
+      - run:
+          name: Run tests
+          command: |
+            go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+      - run:
+          name: Generate coverage report
+          command: |
+            go tool cover -func=coverage.out
+            go tool cover -html=coverage.out -o coverage.html
+      - store_artifacts:
+          path: coverage.html
+          destination: coverage-report
+      - store_test_results:
+          path: coverage.out
+
+  lint:
+    executor: go-executor
+    steps:
+      - checkout
+      - restore-go-cache
+      - run:
+          name: Install golangci-lint
+          command: |
+            curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+      - run:
+          name: Run linters
+          command: golangci-lint run --timeout=5m
+
+  security-scan:
+    executor: go-executor
+    steps:
+      - checkout
+      - restore-go-cache
+      - attach_workspace:
+          at: .
+      - run:
+          name: Run security scan
+          command: |
+            chmod +x gosecvibes
+            ./gosecvibes scan . \
+              --ci-mode \
+              --format both \
+              --output security_report \
+              --fail-on high \
+              --verbose || EXIT_CODE=$?
+            
+            if [ "${EXIT_CODE:-0}" -eq 3 ]; then
+              echo "Scanner error"
+              exit 1
+            elif [ "${EXIT_CODE:-0}" -eq 2 ]; then
+              echo "High/Critical vulnerabilities found"
+              exit 1
+            fi
+      - store_artifacts:
+          path: security_report.json
+          destination: security-reports/report.json
+      - store_artifacts:
+          path: security_report.md
+          destination: security-reports/report.md
+
+  vulnerability-check:
+    executor: go-executor
+    steps:
+      - checkout
+      - restore-go-cache
+      - run:
+          name: Install govulncheck
+          command: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - run:
+          name: Check for vulnerabilities
+          command: govulncheck ./...
+
+  build-release:
+    executor: go-executor
+    steps:
+      - checkout
+      - restore-go-cache
+      - run:
+          name: Build release binaries
+          command: |
+            VERSION=${CIRCLE_TAG:-dev}
+            BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            
+            mkdir -p dist
+            
+            for GOOS in linux darwin windows; do
+              for GOARCH in amd64 arm64; do
+                if [ "$GOOS" == "windows" ] && [ "$GOARCH" == "arm64" ]; then
+                  continue
+                fi
+                
+                OUTPUT_NAME=gosecvibes-${VERSION}-${GOOS}-${GOARCH}
+                if [ "$GOOS" == "windows" ]; then
+                  OUTPUT_NAME="${OUTPUT_NAME}.exe"
+                fi
+                
+                echo "Building ${OUTPUT_NAME}..."
+                CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
+                  -ldflags="-s -w -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME}" \
+                  -o dist/${OUTPUT_NAME} \
+                  cmd/gosecvibes/main.go
+                
+                sha256sum dist/${OUTPUT_NAME} > dist/${OUTPUT_NAME}.sha256
+              done
+            done
+      - persist_to_workspace:
+          root: .
+          paths:
+            - dist
+      - store_artifacts:
+          path: dist
+          destination: release-binaries
+
+  docker-build:
+    executor: docker/docker
+    steps:
+      - checkout
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - docker/check
+      - docker/build:
+          image: $CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME
+          tag: ${CIRCLE_TAG:-latest}
+      - when:
+          condition:
+            or:
+              - << pipeline.git.tag >>
+              - equal: [ main, << pipeline.git.branch >> ]
+          steps:
+            - docker/push:
+                image: $CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME
+                tag: ${CIRCLE_TAG:-latest}
+
+# Workflows
+workflows:
+  version: 2
+  
+  # Main workflow for all branches
+  build-test-scan:
+    jobs:
+      - build
+      - test:
+          requires:
+            - build
+      - lint:
+          requires:
+            - build
+      - security-scan:
+          requires:
+            - build
+      - vulnerability-check:
+          requires:
+            - build
+  
+  # Release workflow for tags
+  release:
+    jobs:
+      - build:
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
+      - test:
+          requires:
+            - build
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
+      - security-scan:
+          requires:
+            - build
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
+      - build-release:
+          requires:
+            - test
+            - security-scan
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
+      - docker-build:
+          requires:
+            - build-release
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/

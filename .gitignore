@@ -1,15 +1,70 @@
-# Binaries
-gosecvibes
-gosecvibes_new
-
-# Reports
-REPORT.md
-
-# Go build artifacts
+# Binaries for programs and plugins
 *.exe
-*.test
-*.prof
-*.out
+*.exe~
+*.dll
+*.so
+*.dylib
+gosecvibes
+gosecvibes-*
 
-# Vendor
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.out
+coverage.html
+
+# Dependency directories
 vendor/
+
+# Go workspace file
+go.work
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build artifacts
+dist/
+bin/
+build/
+
+# Reports and outputs
+*.json
+*.md
+!README.md
+!CI-CD_JENKINS.md
+!CI-CD_INTEGRATION.md
+!CI-CD_SUMMARY.md
+!CONTRIBUTING.md
+!CHANGELOG.md
+!.github/**/*.md
+SECURITY_AUDIT.*
+security_report.*
+self_scan.*
+report.*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Environment files
+.env
+.env.local
+
+# Docker
+*.log
+
+# CI/CD artifacts
+.gitlab-ci-local/
+
+# Reports directory (keep structure)
+reports/*.json
+reports/*.md
+reports/*.html

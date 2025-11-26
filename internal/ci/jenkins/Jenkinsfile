@@ -1,0 +1,65 @@
+pipeline {
+    agent any
+
+    environment {
+        GOSECVIBES_VERSION = 'latest'
+        SCAN_TARGET = '.'
+        SEVERITY_THRESHOLD = 'high'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                script {
+                    // Download or build gosecvibes
+                    // In a real scenario, you might pull a docker image or download a binary
+                    // For this example, we assume we build it from source or it's available
+                    sh 'go build -o gosecvibes cmd/gosecvibes/main.go'
+
+                    // Run the scan in CI mode
+                    // Exit codes: 0=Clean, 1=Low/Med, 2=High/Crit, 3=Error
+                    def exitCode = sh(
+                        script: "./gosecvibes scan ${SCAN_TARGET} --ci-mode --format json --output security_report.json --fail-on ${SEVERITY_THRESHOLD}",
+                        returnStatus: true
+                    )
+
+                    echo "Scan exit code: ${exitCode}"
+
+                    if (exitCode == 3) {
+                        error "Scanner internal error"
+                    } else if (exitCode == 2) {
+                        currentBuild.result = 'UNSTABLE' // or FAILURE depending on policy
+                        echo "High/Critical vulnerabilities found!"
+                    } else if (exitCode == 1) {
+                        echo "Low/Medium vulnerabilities found."
+                    } else {
+                        echo "No vulnerabilities found."
+                    }
+                }
+            }
+        }
+
+        stage('Publish Reports') {
+            steps {
+                // Archive the JSON report
+                archiveArtifacts artifacts: 'security_report.json', fingerprint: true
+                
+                // If you have the HTML Publisher plugin or similar
+                // publishHTML target: [
+                //     allowMissing: false,
+                //     alwaysLinkToLastBuild: true,
+                //     keepAll: true,
+                //     reportDir: '.',
+                //     reportFiles: 'security_report.json',
+                //     reportName: 'Security Report'
+                // ]
+            }
+        }
+    }
+}

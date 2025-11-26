@@ -1,0 +1,179 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run security scan daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  GO_VERSION: '1.21'
+  GOSECVIBES_VERSION: 'latest'
+
+jobs:
+  security-scan:
+    name: Run Security Analysis
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better analysis
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      
+      - name: Build Go-SecureVibes
+        run: |
+          echo "Building Go-SecureVibes scanner..."
+          go build -v -o gosecvibes cmd/gosecvibes/main.go
+          chmod +x gosecvibes
+          ./gosecvibes --version || echo "Version 1.0.0"
+      
+      - name: Run Security Scan
+        id: scan
+        continue-on-error: true
+        run: |
+          echo "Starting comprehensive security scan..."
+          ./gosecvibes scan . \
+            --ci-mode \
+            --format both \
+            --output security_report \
+            --fail-on high \
+            --verbose
+          
+          SCAN_EXIT_CODE=$?
+          echo "scan_exit_code=$SCAN_EXIT_CODE" >> $GITHUB_OUTPUT
+          
+          # Exit codes: 0=Clean, 1=Low/Med, 2=High/Crit, 3=Error
+          if [ $SCAN_EXIT_CODE -eq 3 ]; then
+            echo "::error::Scanner encountered an internal error"
+            exit 1
+          elif [ $SCAN_EXIT_CODE -eq 2 ]; then
+            echo "::warning::High/Critical vulnerabilities found"
+          elif [ $SCAN_EXIT_CODE -eq 1 ]; then
+            echo "::notice::Low/Medium vulnerabilities found"
+          else
+            echo "::notice::No vulnerabilities found"
+          fi
+      
+      - name: Parse scan results
+        if: always()
+        id: parse_results
+        run: |
+          if [ -f "security_report.json" ]; then
+            CRITICAL=$(jq -r '.summary.critical // 0' security_report.json)
+            HIGH=$(jq -r '.summary.high // 0' security_report.json)
+            MEDIUM=$(jq -r '.summary.medium // 0' security_report.json)
+            LOW=$(jq -r '.summary.low // 0' security_report.json)
+            TOTAL=$(jq -r '.summary.total_issues // 0' security_report.json)
+            
+            echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+            echo "high=$HIGH" >> $GITHUB_OUTPUT
+            echo "medium=$MEDIUM" >> $GITHUB_OUTPUT
+            echo "low=$LOW" >> $GITHUB_OUTPUT
+            echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          else
+            echo "critical=0" >> $GITHUB_OUTPUT
+            echo "high=0" >> $GITHUB_OUTPUT
+            echo "medium=0" >> $GITHUB_OUTPUT
+            echo "low=0" >> $GITHUB_OUTPUT
+            echo "total=0" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const critical = '${{ steps.parse_results.outputs.critical }}';
+            const high = '${{ steps.parse_results.outputs.high }}';
+            const medium = '${{ steps.parse_results.outputs.medium }}';
+            const low = '${{ steps.parse_results.outputs.low }}';
+            const total = '${{ steps.parse_results.outputs.total }}';
+            
+            const severityEmoji = {
+              critical: '🔴',
+              high: '🟠',
+              medium: '🟡',
+              low: '🔵'
+            };
+            
+            let status = '✅ No vulnerabilities found';
+            if (parseInt(critical) > 0 || parseInt(high) > 0) {
+              status = '❌ Security issues found';
+            } else if (parseInt(medium) > 0 || parseInt(low) > 0) {
+              status = '⚠️ Minor security issues found';
+            }
+            
+            const comment = `## 🔒 Security Scan Results
+            
+            ${status}
+            
+            ### Summary
+            - ${severityEmoji.critical} **Critical:** ${critical}
+            - ${severityEmoji.high} **High:** ${high}
+            - ${severityEmoji.medium} **Medium:** ${medium}
+            - ${severityEmoji.low} **Low:** ${low}
+            - **Total Issues:** ${total}
+            
+            ### Details
+            Full security report is available in the workflow artifacts.
+            
+            ---
+            *Scanned by Go-SecureVibes | [View Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})*`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+      
+      - name: Upload security reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            security_report.json
+            security_report.md
+            SECURITY_AUDIT.*
+          retention-days: 30
+      
+      - name: Upload to GitHub Security
+        if: always() && hashFiles('security_report.json') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
+        with:
+          sarif_file: security_report.sarif
+          category: gosecvibes
+      
+      - name: Check scan status
+        if: steps.scan.outputs.scan_exit_code == '2'
+        run: |
+          echo "::error::Security scan failed due to high/critical vulnerabilities"
+          exit 1

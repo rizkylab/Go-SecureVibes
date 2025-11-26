@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yourusername/gosecvibes/pkg/assessment"
+	"github.com/rizkylab/Go-SecureVibes/internal/agents/architecture"
 )
 
 // Agent handles the threat modeling phase
@@ -17,7 +17,7 @@ func New() *Agent {
 }
 
 // Run executes threat modeling based on assessment results
-func (a *Agent) Run(assessment *assessment.Result) (*Result, error) {
+func (a *Agent) Run(assessment *architecture.Result) (*Result, error) {
 	result := &Result{
 		Threats: []Threat{},
 	}

@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# Pre-push hook for Go-SecureVibes
+# This hook runs before pushing to ensure comprehensive quality checks
+
+set -e
+
+echo "🚀 Running pre-push checks..."
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# 1. Run full test suite
+echo -e "\n${YELLOW}1. Running full test suite...${NC}"
+if ! go test -v -race -coverprofile=coverage.out ./...; then
+    echo -e "${RED}✗ Tests failed${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ All tests passed${NC}"
+
+# 2. Check test coverage
+echo -e "\n${YELLOW}2. Checking test coverage...${NC}"
+COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+COVERAGE_THRESHOLD=50
+
+if (( $(echo "$COVERAGE < $COVERAGE_THRESHOLD" | bc -l) )); then
+    echo -e "${YELLOW}⚠ Test coverage is ${COVERAGE}% (threshold: ${COVERAGE_THRESHOLD}%)${NC}"
+else
+    echo -e "${GREEN}✓ Test coverage is ${COVERAGE}%${NC}"
+fi
+
+# 3. Run security scan on itself
+echo -e "\n${YELLOW}3. Running self security scan...${NC}"
+if [ -f "./gosecvibes" ]; then
+    if ! ./gosecvibes scan . --format json --output /tmp/self_scan.json --severity high; then
+        echo -e "${YELLOW}⚠ Security scan found issues${NC}"
+        echo -e "${YELLOW}Review /tmp/self_scan.json for details${NC}"
+    else
+        echo -e "${GREEN}✓ Security scan passed${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠ gosecvibes binary not found, skipping self-scan${NC}"
+fi
+
+# 4. Check for dependency vulnerabilities
+echo -e "\n${YELLOW}4. Checking for dependency vulnerabilities...${NC}"
+if command -v govulncheck &> /dev/null; then
+    if ! govulncheck ./...; then
+        echo -e "${YELLOW}⚠ Vulnerability check found issues${NC}"
+    else
+        echo -e "${GREEN}✓ No known vulnerabilities${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠ govulncheck not installed, skipping vulnerability check${NC}"
+    echo -e "${YELLOW}Install with: go install golang.org/x/vuln/cmd/govulncheck@latest${NC}"
+fi
+
+echo -e "\n${GREEN}✅ All pre-push checks completed!${NC}"
+exit 0

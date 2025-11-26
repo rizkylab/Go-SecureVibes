@@ -1,0 +1,48 @@
+# Go-SecureVibes Docker Compose
+# For local development and testing
+
+version: '3.8'
+
+services:
+  # Main scanner service
+  gosecvibes:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    image: gosecvibes:${VERSION:-dev}
+    container_name: gosecvibes
+    volumes:
+      # Mount the project to scan
+      - ${SCAN_TARGET:-.}:/workspace:ro
+      # Mount output directory
+      - ./reports:/reports
+    environment:
+      - SCAN_TARGET=/workspace
+      - OUTPUT_DIR=/reports
+      - FORMAT=${FORMAT:-both}
+      - SEVERITY=${SEVERITY:-low}
+    command: >
+      scan /workspace --format ${FORMAT:-both} --output /reports/security_report --severity ${SEVERITY:-low} --verbose
+    networks:
+      - scanner-network
+    restart: "no"
+  # Optional: Web UI for viewing reports (future enhancement)
+  # web-ui:
+  #   image: nginx:alpine
+  #   container_name: gosecvibes-ui
+  #   ports:
+  #     - "8080:80"
+  #   volumes:
+  #     - ./reports:/usr/share/nginx/html/reports:ro
+  #   networks:
+  #     - scanner-network
+
+networks:
+  scanner-network:
+    driver: bridge
+
+volumes:
+  reports:
+    driver: local

@@ -13,4 +13,5 @@ type Config struct {
 	FailOn       string
 	Excludes     []string
 	TargetURL    string // New field for DAST target
+	CIMode       bool
 }

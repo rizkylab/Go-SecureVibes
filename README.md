@@ -342,7 +342,7 @@ jobs:
           go-version: '1.21'
       
       - name: Install Go-SecureVibes
-        run: go install github.com/yourusername/gosecvibes/cmd/gosecvibes@latest
+        run: go install rizkylab/Go-SecureVibes/cmd/gosecvibes@latest
       
       - name: Run Security Scan
         run: gosecvibes scan . --fail-on high --format both

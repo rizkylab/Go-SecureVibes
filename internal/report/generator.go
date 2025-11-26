@@ -6,10 +6,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/yourusername/gosecvibes/pkg/assessment"
-	"github.com/yourusername/gosecvibes/pkg/codereview"
-	"github.com/yourusername/gosecvibes/pkg/dast"
-	"github.com/yourusername/gosecvibes/pkg/threatmodel"
+	"github.com/rizkylab/Go-SecureVibes/internal/agents/architecture"
+	"github.com/rizkylab/Go-SecureVibes/internal/agents/dast"
+	"github.com/rizkylab/Go-SecureVibes/internal/agents/staticanalysis"
+	"github.com/rizkylab/Go-SecureVibes/internal/agents/threatmodel"
 )
 
 // Generator handles report generation
@@ -28,9 +28,9 @@ func New(outputFile, outputFormat string) *Generator {
 
 // Generate creates the final report
 func (g *Generator) Generate(
-	assess *assessment.Result,
+	assess *architecture.Result,
 	threats *threatmodel.Result,
-	review *codereview.Result,
+	review *staticanalysis.Result,
 	dastRes *dast.Result,
 ) error {
 	if g.OutputFormat == "json" || g.OutputFormat == "both" {
@@ -48,7 +48,7 @@ func (g *Generator) Generate(
 	return nil
 }
 
-func (g *Generator) generateJSON(assess *assessment.Result, threats *threatmodel.Result, review *codereview.Result, dastRes *dast.Result) error {
+func (g *Generator) generateJSON(assess *architecture.Result, threats *threatmodel.Result, review *staticanalysis.Result, dastRes *dast.Result) error {
 	report := map[string]interface{}{
 		"scan_date":       time.Now(),
 		"assessment":      assess,
@@ -70,7 +70,7 @@ func (g *Generator) generateJSON(assess *assessment.Result, threats *threatmodel
 	return os.WriteFile(filename, data, 0644)
 }
 
-func (g *Generator) generateMarkdown(assess *assessment.Result, threats *threatmodel.Result, review *codereview.Result, dastRes *dast.Result) error {
+func (g *Generator) generateMarkdown(assess *architecture.Result, threats *threatmodel.Result, review *staticanalysis.Result, dastRes *dast.Result) error {
 	f, err := os.Create(g.OutputFile)
 	if err != nil {
 		return err

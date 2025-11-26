@@ -1,0 +1,246 @@
+stages:
+  - build
+  - test
+  - security
+  - release
+  - deploy
+
+variables:
+  GO_VERSION: "1.21"
+  GOSECVIBES_VERSION: "latest"
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+
+# Cache configuration
+.go-cache:
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - .go/pkg/mod/
+      - .go-build/
+
+# Build stage
+build:
+  stage: build
+  image: golang:${GO_VERSION}
+  extends: .go-cache
+  before_script:
+    - mkdir -p .go
+    - export GOPATH=$CI_PROJECT_DIR/.go
+    - export GOCACHE=$CI_PROJECT_DIR/.go-build
+  script:
+    - echo "Building Go-SecureVibes..."
+    - go mod download
+    - go mod verify
+    - go build -v -o gosecvibes cmd/gosecvibes/main.go
+    - chmod +x gosecvibes
+    - ./gosecvibes --version || echo "Version 1.0.0"
+  artifacts:
+    paths:
+      - gosecvibes
+    expire_in: 1 day
+
+# Unit tests
+test:unit:
+  stage: test
+  image: golang:${GO_VERSION}
+  extends: .go-cache
+  before_script:
+    - mkdir -p .go
+    - export GOPATH=$CI_PROJECT_DIR/.go
+    - export GOCACHE=$CI_PROJECT_DIR/.go-build
+  script:
+    - echo "Running unit tests..."
+    - go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+    - go tool cover -func=coverage.out
+  coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.out
+    paths:
+      - coverage.out
+    expire_in: 7 days
+
+# Linting
+test:lint:
+  stage: test
+  image: golangci/golangci-lint:latest
+  script:
+    - echo "Running linters..."
+    - golangci-lint run --timeout=5m --out-format=colored-line-number
+  allow_failure: true
+
+# Static analysis
+test:vet:
+  stage: test
+  image: golang:${GO_VERSION}
+  extends: .go-cache
+  before_script:
+    - mkdir -p .go
+    - export GOPATH=$CI_PROJECT_DIR/.go
+  script:
+    - echo "Running go vet..."
+    - go vet ./...
+
+# Security scanning with Go-SecureVibes
+security:scan:
+  stage: security
+  image: golang:${GO_VERSION}
+  extends: .go-cache
+  dependencies:
+    - build
+  script:
+    - echo "Running security scan..."
+    - chmod +x gosecvibes
+    - |
+      ./gosecvibes scan . \
+        --ci-mode \
+        --format both \
+        --output security_report \
+        --fail-on high \
+        --verbose || SCAN_EXIT_CODE=$?
+    
+    - |
+      if [ "${SCAN_EXIT_CODE:-0}" -eq 3 ]; then
+        echo "ERROR: Scanner encountered an internal error"
+        exit 1
+      elif [ "${SCAN_EXIT_CODE:-0}" -eq 2 ]; then
+        echo "WARNING: High/Critical vulnerabilities found"
+        exit 1
+      elif [ "${SCAN_EXIT_CODE:-0}" -eq 1 ]; then
+        echo "NOTICE: Low/Medium vulnerabilities found"
+      else
+        echo "SUCCESS: No vulnerabilities found"
+      fi
+  artifacts:
+    reports:
+      sast: security_report.json
+    paths:
+      - security_report.json
+      - security_report.md
+      - SECURITY_AUDIT.*
+    expire_in: 30 days
+  allow_failure: false
+
+# Dependency scanning
+security:dependencies:
+  stage: security
+  image: golang:${GO_VERSION}
+  script:
+    - echo "Scanning dependencies for vulnerabilities..."
+    - go install golang.org/x/vuln/cmd/govulncheck@latest
+    - govulncheck ./...
+  allow_failure: true
+
+# Secret scanning
+security:secrets:
+  stage: security
+  image: zricethezav/gitleaks:latest
+  script:
+    - echo "Scanning for secrets..."
+    - gitleaks detect --source . --verbose --report-path gitleaks-report.json
+  artifacts:
+    reports:
+      secret_detection: gitleaks-report.json
+    paths:
+      - gitleaks-report.json
+    expire_in: 30 days
+  allow_failure: true
+
+# Build multi-platform binaries
+release:build:
+  stage: release
+  image: golang:${GO_VERSION}
+  only:
+    - tags
+  script:
+    - echo "Building release binaries..."
+    - |
+      VERSION=${CI_COMMIT_TAG}
+      BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      
+      for GOOS in linux darwin windows; do
+        for GOARCH in amd64 arm64; do
+          # Skip windows/arm64
+          if [ "$GOOS" == "windows" ] && [ "$GOARCH" == "arm64" ]; then
+            continue
+          fi
+          
+          OUTPUT_NAME=gosecvibes-${VERSION}-${GOOS}-${GOARCH}
+          if [ "$GOOS" == "windows" ]; then
+            OUTPUT_NAME="${OUTPUT_NAME}.exe"
+          fi
+          
+          echo "Building ${OUTPUT_NAME}..."
+          CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
+            -ldflags="-s -w -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME}" \
+            -o ${OUTPUT_NAME} \
+            cmd/gosecvibes/main.go
+          
+          sha256sum ${OUTPUT_NAME} > ${OUTPUT_NAME}.sha256
+        done
+      done
+  artifacts:
+    paths:
+      - gosecvibes-*
+    expire_in: 1 year
+
+# Docker build and push
+release:docker:
+  stage: release
+  image: docker:latest
+  services:
+    - docker:dind
+  only:
+    - tags
+    - main
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        VERSION=${CI_COMMIT_TAG#v}
+        TAGS="-t $CI_REGISTRY_IMAGE:$VERSION -t $CI_REGISTRY_IMAGE:latest"
+      else
+        TAGS="-t $CI_REGISTRY_IMAGE:dev"
+      fi
+    
+    - echo "Building Docker image with tags: $TAGS"
+    - docker build $TAGS .
+    - docker push --all-tags $CI_REGISTRY_IMAGE
+
+# Deploy to staging (example)
+deploy:staging:
+  stage: deploy
+  image: alpine:latest
+  only:
+    - main
+  before_script:
+    - apk add --no-cache openssh-client
+  script:
+    - echo "Deploying to staging environment..."
+    # Add your deployment commands here
+    - echo "Deployment completed"
+  environment:
+    name: staging
+    url: https://staging.example.com
+  when: manual
+
+# Deploy to production (example)
+deploy:production:
+  stage: deploy
+  image: alpine:latest
+  only:
+    - tags
+  before_script:
+    - apk add --no-cache openssh-client
+  script:
+    - echo "Deploying to production environment..."
+    # Add your deployment commands here
+    - echo "Deployment completed"
+  environment:
+    name: production
+    url: https://production.example.com
+  when: manual

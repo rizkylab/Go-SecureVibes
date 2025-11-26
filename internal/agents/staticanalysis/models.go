@@ -1,4 +1,4 @@
-package codereview
+package staticanalysis
 
 // Vulnerability represents a security issue found in the code
 type Vulnerability struct {

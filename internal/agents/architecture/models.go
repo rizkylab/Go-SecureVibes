@@ -1,4 +1,4 @@
-package assessment
+package architecture
 
 // ComponentType defines the type of a component
 type ComponentType string

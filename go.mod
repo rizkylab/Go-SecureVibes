@@ -1,4 +1,4 @@
-module github.com/yourusername/gosecvibes
+module github.com/rizkylab/Go-SecureVibes
 
 go 1.21
 
