@@ -44,6 +44,7 @@ build/
 !CONTRIBUTING.md
 !CHANGELOG.md
 !.github/**/*.md
+!webui/**/*.md
 SECURITY_AUDIT.*
 security_report.*
 self_scan.*

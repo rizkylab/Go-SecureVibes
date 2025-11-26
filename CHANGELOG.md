@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Web Dashboard Feature** (Foundation)
+  - Comprehensive documentation for Web UI (400+ lines)
+  - Complete data models for scans, findings, threats, and DAST
+  - Main server structure with Fiber framework
+  - API endpoint definitions for all features
+  - CI/CD integration examples for Jenkins, GitLab, GitHub Actions
+  - Implementation guide and roadmap
 - Comprehensive CI/CD integration for GitHub Actions, GitLab CI, Jenkins, and CircleCI
 - Docker support with multi-stage builds
 - Pre-commit and pre-push Git hooks
@@ -19,6 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Updated .gitignore to exclude build artifacts and reports
 - Enhanced CI/CD documentation
+
+### Planned (Web Dashboard)
+- Backend API implementation (handlers, services, database)
+- SvelteKit frontend with modern UI
+- Architecture visualization with Cytoscape.js
+- STRIDE threat model viewer
+- Findings explorer with advanced filtering
+- DAST results viewer
+- Scan comparison functionality
+- Docker deployment setup
 
 ### Fixed
 - N/A
