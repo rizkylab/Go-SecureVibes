@@ -1,0 +1,15 @@
+# Binaries
+gosecvibes
+gosecvibes_new
+
+# Reports
+REPORT.md
+
+# Go build artifacts
+*.exe
+*.test
+*.prof
+*.out
+
+# Vendor
+vendor/
