@@ -45,6 +45,11 @@ build/
 !CHANGELOG.md
 !.github/**/*.md
 !webui/**/*.md
+!**/package.json
+!**/package-lock.json
+!**/tsconfig.json
+!**/jsconfig.json
+!**/.npmrc
 SECURITY_AUDIT.*
 security_report.*
 self_scan.*

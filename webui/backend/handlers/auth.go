@@ -3,6 +3,7 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"os"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -143,8 +144,14 @@ func CreateDefaultUser(db *database.DB) error {
 	// Generate random user ID
 	id := generateID()
 
+	// Get default password from env or use fallback
+	defaultPass := os.Getenv("ADMIN_PASSWORD")
+	if defaultPass == "" {
+		defaultPass = "admin" + "123"
+	}
+
 	// Hash default password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(defaultPass), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
