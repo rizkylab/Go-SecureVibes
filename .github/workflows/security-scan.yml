@@ -59,6 +59,7 @@ jobs:
         run: |
           echo "Starting comprehensive security scan..."
           ./gosecvibes scan . \
+            --exclude webui \
             --ci-mode \
             --format both \
             --output security_report \

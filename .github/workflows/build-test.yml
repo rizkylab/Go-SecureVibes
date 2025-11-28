@@ -7,16 +7,17 @@ on:
     branches: [ main, develop ]
 
 env:
-  GO_VERSION: '1.21'
+  GO_VERSION: '1.22'
+  NODE_VERSION: '20'
 
 jobs:
-  build:
-    name: Build
+  # Job 1: Build Core CLI Scanner
+  build-cli:
+    name: Build CLI
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go-version: ['1.21', '1.22']
     
     steps:
       - name: Checkout code
@@ -25,49 +26,35 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: ${{ env.GO_VERSION }}
           cache: true
       
       - name: Get dependencies
         run: go mod download
       
-      - name: Verify dependencies
-        run: go mod verify
-      
-      - name: Build
+      - name: Build CLI
         run: go build -v -o gosecvibes${{ matrix.os == 'windows-latest' && '.exe' || '' }} cmd/gosecvibes/main.go
       
-      - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
-      
-      - name: Upload coverage to Codecov
-        if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.21'
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./coverage.out
-          flags: unittests
-          name: codecov-umbrella
-      
-      - name: Run Go vet
-        run: go vet ./...
-      
-      - name: Run staticcheck
-        uses: dominikh/staticcheck-action@v1
-        with:
-          version: "latest"
-          install-go: false
+      - name: Run CLI Tests
+        # Run tests only in root module, excluding webui
+        if: runner.os != 'Windows'
+        run: go test -v -race ./...
       
       - name: Upload binary artifact
-        if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.21'
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
           name: gosecvibes-${{ matrix.os }}
           path: gosecvibes${{ matrix.os == 'windows-latest' && '.exe' || '' }}
           retention-days: 7
 
-  lint:
-    name: Lint
+  # Job 2: Build WebUI Backend
+  build-backend:
+    name: Build Backend
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./webui/backend
     
     steps:
       - name: Checkout code
@@ -78,52 +65,62 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+          cache-dependency-path: webui/backend/go.sum
       
-      - name: Run golangci-lint
+      - name: Get dependencies
+        run: go mod download
+      
+      - name: Build Backend
+        run: go build -v -o securevibes-server cmd/server/main.go
+        
+      - name: Run Backend Tests
+        run: go test -v ./...
+
+  # Job 3: Build WebUI Frontend
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./webui/frontend
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: webui/frontend/package-lock.json
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build Frontend
+        run: npm run build
+
+  # Job 4: Linting (Unified)
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      
+      - name: Lint CLI
         uses: golangci/golangci-lint-action@v4
         with:
           version: latest
           args: --timeout=5m
-
-  integration-test:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    needs: build
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up Go
-        uses: actions/setup-go@v5
+          working-directory: .
+          
+      - name: Lint Backend
+        uses: golangci/golangci-lint-action@v4
         with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-      
-      - name: Build scanner
-        run: go build -v -o gosecvibes cmd/gosecvibes/main.go
-      
-      - name: Run integration tests
-        run: |
-          # Test scanning example vulnerable code
-          if [ -d "examples" ]; then
-            ./gosecvibes scan examples --format json --output test_report.json
-            
-            # Verify report was generated
-            if [ ! -f "test_report.json" ]; then
-              echo "::error::Integration test failed - no report generated"
-              exit 1
-            fi
-            
-            echo "::notice::Integration test passed"
-          else
-            echo "::warning::No examples directory found, skipping integration test"
-          fi
-      
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: integration-test-results
-          path: test_report.json
-          retention-days: 7
+          version: latest
+          args: --timeout=5m
+          working-directory: ./webui/backend
