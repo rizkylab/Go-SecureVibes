@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -33,6 +34,13 @@ func main() {
 	}
 	defer db.Close()
 
+	// Create default admin user if no users exist
+	if err := handlers.CreateDefaultUser(db); err != nil {
+		log.Printf("Warning: Failed to create default user: %v", err)
+	} else {
+		log.Println("✓ Database initialized (default admin user: admin/admin123)")
+	}
+
 	// Create Fiber app
 	app := fiber.New(fiber.Config{
 		AppName:      "SecureVibes Dashboard v1.0",
@@ -48,7 +56,7 @@ func main() {
 		Format: "[${time}] ${status} - ${method} ${path} (${latency})\n",
 	}))
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: cfg.Server.CORSOrigins,
+		AllowOrigins: strings.Join(cfg.Server.CORSOrigins, ","),
 		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
 		AllowMethods: "GET, POST, PUT, DELETE, PATCH, OPTIONS",
 	}))
@@ -86,6 +94,7 @@ func main() {
 	protected.Get("/scans/:id/threat-model", handlers.GetThreatModel(db, cfg))
 
 	// Findings
+	protected.Get("/findings", handlers.ListAllFindings(db))
 	protected.Get("/scans/:id/findings", handlers.ListFindings(db))
 	protected.Get("/scans/:id/findings/:finding_id", handlers.GetFinding(db))
 	protected.Patch("/scans/:id/findings/:finding_id/status", handlers.UpdateFindingStatus(db))

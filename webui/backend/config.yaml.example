@@ -1,0 +1,21 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+  cors_origins:
+    - http://localhost:5173
+    - http://localhost:3000
+
+database:
+  path: ./data/scans.db
+  
+storage:
+  output_dir: ./output
+  max_scan_age_days: 90
+
+auth:
+  jwt_secret: change-this-secret-in-production-please-use-a-strong-random-key
+  token_expiry: 24h
+  
+features:
+  websocket_enabled: true
+  auto_cleanup: true

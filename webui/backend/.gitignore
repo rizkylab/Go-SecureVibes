@@ -1,0 +1,42 @@
+# Ignore build artifacts
+securevibes-dashboard
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# Database files
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Output directory
+output/
+
+# Configuration files (keep examples)
+config.yaml
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

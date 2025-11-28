@@ -1,0 +1,50 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-slate-100 font-sans antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-semibold tracking-tight;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background cursor-pointer;
+  }
+
+  .btn-primary {
+    @apply bg-primary text-white hover:bg-primary-light;
+  }
+
+  .btn-secondary {
+    @apply bg-surface text-white hover:bg-slate-700 border border-slate-700;
+  }
+
+  .btn-danger {
+    @apply bg-critical text-white hover:bg-red-600;
+  }
+
+  .card {
+    @apply bg-surface border border-border rounded-lg shadow-sm;
+  }
+
+  .input {
+    @apply flex h-10 w-full rounded-md border border-border bg-slate-900 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ring-offset-background;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2;
+  }
+}
